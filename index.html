@@ -2,33 +2,14 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="mobile-web-app-capable" content="yes">
-    <title>동옥의 AI TETRIS</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>테트리스 게임</title>
     <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
     <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Gaegu:wght@700&display=swap" rel="stylesheet">
     <style>
-        * {
-            -webkit-tap-highlight-color: transparent;
-            touch-action: manipulation;
-        }
-        html, body {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-            overscroll-behavior: none;
-            position: fixed;
-        }
-        #root {
-            width: 100%;
-            height: 100%;
-        }
         @keyframes camelWalk {
             from { transform: translateX(100vw); }
             to { transform: translateX(-100%); }
@@ -40,16 +21,19 @@
             font-family: 'Gaegu', cursive;
             font-weight: 700;
         }
+        @keyframes wheelSpin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .wheel-spin {
+            animation: wheelSpin var(--spin-speed, 2s) linear infinite;
+        }
         @keyframes blockFall {
             0% { transform: translateY(0); opacity: 1; }
             100% { transform: translateY(20px); opacity: 0.3; }
         }
         .block-fall {
             animation: blockFall 0.5s ease-out forwards;
-        }
-        .control-btn {
-            user-select: none;
-            -webkit-user-select: none;
         }
     </style>
 </head>
@@ -61,7 +45,7 @@
 
         const BOARD_WIDTH = 10;
         const BOARD_HEIGHT = 20;
-        const CELL_SIZE = 20;
+        const CELL_SIZE = 25;
 
         const SPEED_OPTIONS = {
             slow: { label: '느림', interval: 1500 },
@@ -146,57 +130,12 @@
             const [linesCleared, setLinesCleared] = useState(0);
             const [showLevelUp, setShowLevelUp] = useState(false);
             const [currentInterval, setCurrentInterval] = useState(1000);
-            const [gameOverAnimation, setGameOverAnimation] = useState(false);
             const [level, setLevel] = useState(1);
             const [scoreHistory, setScoreHistory] = useState([]);
             const [highScore, setHighScore] = useState({ score: 0, level: 0 });
-            const [isFullscreen, setIsFullscreen] = useState(false);
-            const [isMoving, setIsMoving] = useState(false);
-            const [moveDirection, setMoveDirection] = useState(0);
+            const [gameOverAnimation, setGameOverAnimation] = useState(false);
 
-            // 전체화면 토글
-            const toggleFullscreen = async () => {
-                try {
-                    if (!document.fullscreenElement) {
-                        const elem = document.documentElement;
-                        if (elem.requestFullscreen) {
-                            await elem.requestFullscreen();
-                        } else if (elem.webkitRequestFullscreen) {
-                            await elem.webkitRequestFullscreen();
-                        } else if (elem.mozRequestFullScreen) {
-                            await elem.mozRequestFullScreen();
-                        } else if (elem.msRequestFullscreen) {
-                            await elem.msRequestFullscreen();
-                        }
-                        setIsFullscreen(true);
-                    } else {
-                        if (document.exitFullscreen) {
-                            await document.exitFullscreen();
-                        } else if (document.webkitExitFullscreen) {
-                            await document.webkitExitFullscreen();
-                        } else if (document.mozCancelFullScreen) {
-                            await document.mozCancelFullScreen();
-                        } else if (document.msExitFullscreen) {
-                            await document.msExitFullscreen();
-                        }
-                        setIsFullscreen(false);
-                    }
-                } catch (err) {
-                    console.log('전체화면 전환 중 오류:', err);
-                    setIsFullscreen(!!document.fullscreenElement);
-                }
-            };
-
-            // 전체화면 상태 감지
-            useEffect(() => {
-                const handleFullscreenChange = () => {
-                    setIsFullscreen(!!document.fullscreenElement);
-                };
-                
-                document.addEventListener('fullscreenchange', handleFullscreenChange);
-                return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
-            }, []);
-
+            // 현재 시간 기반으로 낮/밤 판단 (6-18시: 낮, 나머지: 밤)
             const currentHour = new Date().getHours();
             const isDaytime = currentHour >= 6 && currentHour < 18;
 
@@ -289,8 +228,7 @@
                     // 게임 오버 시 현재 점수를 히스토리에 추가
                     setScoreHistory(prev => {
                         const newHistory = [...prev, { score, level }];
-                        // 최근 5개만 유지
-                        return newHistory.slice(-5);
+                        return newHistory.slice(-5); // 최근 5개만 유지
                     });
                     // 최고 점수 업데이트
                     setHighScore(prev => {
@@ -332,6 +270,23 @@
                 }
             }, [currentPiece, position, board, gameOver, isPaused, showLevelUp, checkCollision, mergePieceToBoard, clearLines, spawnNewPiece]);
 
+            const softDrop = useCallback(() => {
+                if (!currentPiece || gameOver || isPaused || showLevelUp) return;
+                moveDown();
+            }, [currentPiece, gameOver, isPaused, showLevelUp, moveDown]);
+
+            // 점수 포맷팅 함수
+            const formatScore = (score) => {
+                return score.toLocaleString();
+            };
+
+            // 속도 퍼센트 계산 함수
+            const getSpeedPercent = () => {
+                const baseSpeed = SPEED_OPTIONS[speed].interval;
+                const speedRatio = baseSpeed / currentInterval;
+                return Math.round(speedRatio * 100);
+            };
+
             const moveHorizontal = useCallback((direction) => {
                 if (!currentPiece || gameOver || isPaused || showLevelUp) return;
 
@@ -339,9 +294,7 @@
 
                 if (!checkCollision(currentPiece, newPos, board)) {
                     setPosition(newPos);
-                    return true; // 이동 성공
                 }
-                return false; // 이동 실패 (벽에 닿음)
             }, [currentPiece, position, board, gameOver, isPaused, showLevelUp, checkCollision]);
 
             const rotatePiece = useCallback(() => {
@@ -400,6 +353,42 @@
                 });
                 spawnNewPiece();
             }, [currentPiece, position, board, gameOver, isPaused, showLevelUp, checkCollision, clearLines, spawnNewPiece]);
+
+            useEffect(() => {
+                const handleKeyPress = (e) => {
+                    if (!gameStarted) return;
+                    
+                    switch (e.key) {
+                        case 'ArrowLeft':
+                            e.preventDefault();
+                            moveHorizontal(-1);
+                            break;
+                        case 'ArrowRight':
+                            e.preventDefault();
+                            moveHorizontal(1);
+                            break;
+                        case 'ArrowDown':
+                            e.preventDefault();
+                            rotatePieceCounterClockwise();
+                            break;
+                        case 'ArrowUp':
+                            e.preventDefault();
+                            rotatePiece();
+                            break;
+                        case ' ':
+                            e.preventDefault();
+                            hardDrop();
+                            break;
+                        case 'p':
+                        case 'P':
+                            setIsPaused(prev => !prev);
+                            break;
+                    }
+                };
+
+                window.addEventListener('keydown', handleKeyPress);
+                return () => window.removeEventListener('keydown', handleKeyPress);
+            }, [moveHorizontal, rotatePiece, rotatePieceCounterClockwise, hardDrop, gameStarted]);
 
             useEffect(() => {
                 if (!gameStarted || gameOver || isPaused || showLevelUp) return;
@@ -478,52 +467,6 @@
                 setIsPaused(false);
             };
 
-            const formatScore = (score) => {
-                return score.toLocaleString();
-            };
-
-            // 연속 이동 처리
-            useEffect(() => {
-                if (!isMoving) return;
-
-                let moveInterval;
-                let longPressTimeout;
-
-                // 100ms 후 연속 이동 시작
-                longPressTimeout = setTimeout(() => {
-                    // 15ms마다 이동 시도 (매우 빠르게)
-                    moveInterval = setInterval(() => {
-                        if (currentPiece && !gameOver && !isPaused && !showLevelUp) {
-                            const canMove = moveHorizontal(moveDirection);
-                            // 벽에 닿으면 멈춤
-                            if (!canMove) {
-                                clearInterval(moveInterval);
-                                setIsMoving(false);
-                            }
-                        }
-                    }, 15);
-                }, 100);
-
-                return () => {
-                    if (longPressTimeout) clearTimeout(longPressTimeout);
-                    if (moveInterval) clearInterval(moveInterval);
-                };
-            }, [isMoving, moveDirection, moveHorizontal, currentPiece, gameOver, isPaused, showLevelUp]);
-
-            // 이동 시작
-            const handleMoveStart = (direction) => {
-                setMoveDirection(direction);
-                setIsMoving(true);
-                // 첫 번째 이동은 즉시 실행
-                moveHorizontal(direction);
-            };
-
-            // 이동 종료
-            const handleMoveEnd = () => {
-                setIsMoving(false);
-                setMoveDirection(0);
-            };
-
             const renderBoard = () => {
                 const displayBoard = board.map(row => [...row]);
 
@@ -544,6 +487,7 @@
                 return displayBoard;
             };
 
+            // 배경색 설정
             const bgGradient = isDaytime 
                 ? 'from-yellow-300 via-orange-200 to-yellow-400'
                 : 'from-indigo-900 via-purple-900 to-blue-900';
@@ -553,142 +497,214 @@
             const sandColor3 = isDaytime ? 'from-orange-600 to-orange-400' : 'from-gray-800 to-gray-700';
 
             return (
-                <div className={`relative flex flex-col ${!gameStarted ? 'items-center justify-center' : 'items-center justify-between'} min-h-screen bg-gradient-to-b ${bgGradient} text-white overflow-hidden`}>
+                <div className={`relative flex flex-col items-center justify-center min-h-screen bg-gradient-to-b ${bgGradient} text-white p-2 overflow-hidden`}>
+                    {/* 태양 또는 달 */}
                     {isDaytime ? (
-                        <div className="absolute top-5 right-10 w-16 h-16 bg-yellow-400 rounded-full opacity-80 shadow-2xl"></div>
+                        <div className="absolute top-10 right-20 w-24 h-24 bg-yellow-400 rounded-full opacity-80 shadow-2xl"></div>
                     ) : (
-                        <div className="absolute top-5 right-10 w-16 h-16 bg-gray-300 rounded-full opacity-70 shadow-2xl">
-                            <div className="absolute top-1 right-1 w-14 h-14 bg-indigo-900 rounded-full"></div>
+                        <div className="absolute top-10 right-20 w-24 h-24 bg-gray-300 rounded-full opacity-70 shadow-2xl">
+                            <div className="absolute top-2 right-2 w-20 h-20 bg-indigo-900 rounded-full"></div>
                         </div>
                     )}
                     
-                    <div className={`absolute bottom-0 left-0 right-0 h-40 bg-gradient-to-t ${sandColor1} rounded-t-full transform scale-x-150`}></div>
-                    <div className={`absolute bottom-0 left-1/4 right-0 h-32 bg-gradient-to-t ${sandColor2} rounded-t-full transform scale-x-125 opacity-70`}></div>
-                    <div className={`absolute bottom-0 left-0 right-1/3 h-36 bg-gradient-to-t ${sandColor3} rounded-t-full opacity-60`}></div>
+                    {/* 사막 모래 언덕들 */}
+                    <div className={`absolute bottom-0 left-0 right-0 h-64 bg-gradient-to-t ${sandColor1} rounded-t-full transform scale-x-150`}></div>
+                    <div className={`absolute bottom-0 left-1/4 right-0 h-48 bg-gradient-to-t ${sandColor2} rounded-t-full transform scale-x-125 opacity-70`}></div>
+                    <div className={`absolute bottom-0 left-0 right-1/3 h-56 bg-gradient-to-t ${sandColor3} rounded-t-full opacity-60`}></div>
                     
-                    <div className="absolute bottom-12 left-0 right-0 h-16 overflow-hidden z-10">
-                        <div className="animate-camel-walk flex gap-32">
-                            {[...Array(6)].map((_, i) => (
+                    <div className="absolute bottom-32 left-0 right-0 h-32 overflow-hidden">
+                        <div className="animate-camel-walk flex gap-20">
+                            {[...Array(8)].map((_, i) => (
                                 <div key={i} className="flex flex-col items-center min-w-max">
                                     <div className="relative">
-                                        {/* 몸통 */}
-                                        <div className="w-20 h-12 bg-amber-700 rounded-full"></div>
-                                        {/* 첫 번째 혹 (앞쪽) */}
-                                        <div className="absolute top-0 left-1/3 -translate-x-1/2 -translate-y-2 w-9 h-9 bg-amber-800 rounded-full"></div>
-                                        {/* 두 번째 혹 (뒤쪽) */}
-                                        <div className="absolute top-0 right-1/3 translate-x-1/2 -translate-y-2 w-9 h-9 bg-amber-800 rounded-full"></div>
-                                        {/* 목과 머리 */}
-                                        <div className="absolute -top-3 -left-2 w-3 h-12 bg-amber-700 rounded"></div>
-                                        <div className="absolute -top-6 -left-4 w-7 h-6 bg-amber-700 rounded-lg"></div>
-                                        {/* 귀 */}
-                                        <div className="absolute -top-7 -left-5 w-2 h-3 bg-amber-800 rounded-full"></div>
-                                        <div className="absolute -top-7 -left-2 w-2 h-3 bg-amber-800 rounded-full"></div>
-                                        {/* 꼬리 */}
-                                        <div className="absolute top-1 right-0 w-2 h-8 bg-amber-800 rounded"></div>
-                                        {/* 다리 4개 */}
-                                        <div className="absolute bottom-0 left-3 w-2 h-8 bg-amber-900"></div>
-                                        <div className="absolute bottom-0 left-8 w-2 h-8 bg-amber-900"></div>
-                                        <div className="absolute bottom-0 right-8 w-2 h-8 bg-amber-900"></div>
-                                        <div className="absolute bottom-0 right-3 w-2 h-8 bg-amber-900"></div>
+                                        <div className="w-16 h-10 bg-amber-700 rounded-full"></div>
+                                        <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-3 w-8 h-8 bg-amber-800 rounded-full"></div>
+                                        <div className="absolute -top-2 left-0 w-6 h-8 bg-amber-700 rounded-lg"></div>
+                                        <div className="absolute top-2 right-0 w-2 h-6 bg-amber-800 rounded"></div>
+                                        <div className="absolute bottom-0 left-2 w-1.5 h-6 bg-amber-900"></div>
+                                        <div className="absolute bottom-0 left-6 w-1.5 h-6 bg-amber-900"></div>
+                                        <div className="absolute bottom-0 right-6 w-1.5 h-6 bg-amber-900"></div>
+                                        <div className="absolute bottom-0 right-2 w-1.5 h-6 bg-amber-900"></div>
                                     </div>
                                 </div>
                             ))}
                         </div>
                     </div>
 
-                    <div className="relative z-10 w-full flex flex-col items-center pt-2">
-                        <h1 className="game-title text-3xl font-bold mb-2 text-amber-900 drop-shadow-lg text-center">
+                    <div className="relative z-10 w-full max-w-6xl">
+                        <h1 className="game-title text-4xl font-bold mb-3 text-amber-900 drop-shadow-lg text-center">
                             동옥의 AI TETRIS
                         </h1>
                         
-                        {gameStarted && (
-                            <div className="mb-2 flex gap-4 items-center text-base">
-                                <div className="text-amber-900 font-bold drop-shadow">점수: {formatScore(score)}</div>
-                                <div className="text-orange-800 font-bold drop-shadow">줄: {linesCleared}</div>
-                                <button
-                                    onClick={toggleFullscreen}
-                                    className="px-2 py-1 bg-gray-700 active:bg-gray-600 text-white rounded text-xs font-semibold flex items-center gap-1"
-                                >
-                                    {isFullscreen ? '🔽' : '🔼'}
-                                    <span className="text-xs">전체화면</span>
-                                </button>
-                            </div>
-                        )}
+                        <div className="mb-2 flex gap-4 items-center justify-center">
+                            <div className="text-xl text-amber-900 font-bold drop-shadow">점수: {formatScore(score)}</div>
+                            <div className="text-lg text-orange-800 font-bold drop-shadow">제거한 줄: {linesCleared}</div>
+                        </div>
 
                         {!gameStarted && (
-                            <div className="mb-2 flex flex-col items-center gap-2 px-4">
+                            <div className="mb-3 flex flex-col items-center gap-3">
                                 <div className="flex gap-2">
                                     {Object.entries(SPEED_OPTIONS).map(([key, { label }]) => (
                                         <button
                                             key={key}
                                             onClick={() => setSpeed(key)}
-                                            className={`px-3 py-1 rounded-lg font-semibold text-xs ${
+                                            className={`px-3 py-1.5 rounded-lg font-semibold text-sm ${
                                                 speed === key 
-                                                    ? 'bg-green-600 active:bg-green-700' 
-                                                    : 'bg-gray-600 active:bg-gray-700'
+                                                    ? 'bg-green-600 hover:bg-green-700' 
+                                                    : 'bg-gray-600 hover:bg-gray-700'
                                             }`}
                                         >
                                             {label}
                                         </button>
                                     ))}
                                 </div>
-                                
-                                <div className="flex gap-2">
-                                    <button
-                                        onClick={startGame}
-                                        className="px-4 py-2 bg-blue-600 active:bg-blue-700 rounded-lg text-base font-semibold"
-                                    >
-                                        게임 시작
-                                    </button>
-                                    <button
-                                        onClick={startRandomGame}
-                                        className="px-4 py-2 bg-purple-600 active:bg-purple-700 rounded-lg text-base font-semibold"
-                                    >
-                                        🎲 랜덤
-                                    </button>
-                                    <button
-                                        onClick={toggleFullscreen}
-                                        className="px-3 py-2 bg-gray-700 active:bg-gray-600 rounded-lg text-base font-semibold"
-                                    >
-                                        {isFullscreen ? '전체화면 해제' : '전체화면'}
-                                    </button>
+                                <div className="text-xs text-amber-900 font-semibold bg-yellow-200 px-2 py-0.5 rounded-full">
+                                    💡 20줄 제거할 경우 20% Speed-Up
                                 </div>
+                                
+                                <div className="bg-gray-800 border-2 border-gray-700 rounded-lg p-3 text-xs max-w-md shadow-2xl">
+                                    <div className="mb-2 font-semibold text-center text-sm">조작법</div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div className="flex items-center gap-1.5">
+                                            <div className="bg-gray-700 px-1.5 py-0.5 rounded text-xs font-mono">←</div>
+                                            <span>좌측 이동</span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5">
+                                            <div className="bg-gray-700 px-1.5 py-0.5 rounded text-xs font-mono">→</div>
+                                            <span>우측 이동</span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5">
+                                            <div className="bg-gray-700 px-1.5 py-0.5 rounded text-xs font-mono">↑</div>
+                                            <span>시계방향 회전</span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5">
+                                            <div className="bg-gray-700 px-1.5 py-0.5 rounded text-xs font-mono">↓</div>
+                                            <span>반시계방향 회전</span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5">
+                                            <div className="bg-gray-700 px-1.5 py-0.5 rounded text-xs font-mono">Space</div>
+                                            <span>즉시 떨어뜨리기</span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5 col-span-2 justify-center">
+                                            <div className="bg-gray-700 px-1.5 py-0.5 rounded text-xs font-mono">P</div>
+                                            <span>일시정지</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <button
+                                    onClick={startGame}
+                                    className="px-5 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-lg font-semibold"
+                                >
+                                    게임 시작
+                                </button>
                             </div>
                         )}
 
                         {gameStarted && (
                             <>
                                 {showLevelUp && (
-                                    <div className="mb-2 bg-orange-800 border-2 border-yellow-500 rounded-lg p-4 mx-4 shadow-2xl">
-                                        <div className="text-xl text-yellow-300 mb-3 font-bold text-center">🎉 20줄 달성!</div>
-                                        <div className="text-base mb-3 text-center">레벨을 올리시겠습니까?</div>
+                                    <div className="mb-2 bg-orange-800 border-2 border-yellow-500 rounded-lg p-4 shadow-2xl">
+                                        <div className="text-xl text-yellow-300 mb-3 font-bold">🎉 20줄 달성!</div>
+                                        <div className="text-base mb-3">레벨을 올리시겠습니까?</div>
                                         <div className="flex gap-2 justify-center">
                                             <button
                                                 onClick={continueGame}
-                                                className="px-4 py-2 bg-blue-600 active:bg-blue-700 rounded-lg font-semibold text-sm"
+                                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold text-sm"
                                             >
-                                                같은 속도
+                                                같은 속도로 계속하기
                                             </button>
                                             <button
                                                 onClick={increaseSpeed}
-                                                className="px-4 py-2 bg-green-600 active:bg-green-700 rounded-lg font-semibold text-sm"
+                                                className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg font-semibold text-sm"
                                             >
-                                                레벨 {level + 1}로 ↑
+                                                속도 20% 올리기 🚀
                                             </button>
                                         </div>
                                     </div>
                                 )}
 
-                                <div className="flex gap-3 items-start justify-center">
-                                    <div className="flex flex-col gap-2">
+                                {isPaused && !showLevelUp && (
+                                    <div className="mb-2 text-lg text-yellow-400">일시정지</div>
+                                )}
+
+                                {gameOver && (
+                                    <div className="mb-2 flex gap-2 justify-center">
+                                        <button
+                                            onClick={startGame}
+                                            className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm"
+                                        >
+                                            다시 시작
+                                        </button>
+                                        <button
+                                            onClick={resetGame}
+                                            className="px-4 py-1.5 bg-gray-600 hover:bg-gray-700 rounded-lg text-sm"
+                                        >
+                                            메인으로
+                                        </button>
+                                    </div>
+                                )}
+
+                                {!gameOver && !showLevelUp && (
+                                    <div className="mb-2 flex gap-2 justify-center">
+                                        <button
+                                            onClick={startGame}
+                                            className="px-3 py-1.5 bg-green-600 hover:bg-green-700 rounded-lg font-semibold text-sm"
+                                        >
+                                            새 게임
+                                        </button>
+                                        <button
+                                            onClick={resetGame}
+                                            className="px-3 py-1.5 bg-red-600 hover:bg-red-700 rounded-lg font-semibold text-sm"
+                                        >
+                                            게임 취소
+                                        </button>
+                                    </div>
+                                )}
+
+                                <div className="flex gap-4 items-start justify-center">
+                                    <div className="relative">
+                                        <div 
+                                            className="border-4 border-gray-700 bg-gray-800"
+                                            style={{ 
+                                                display: 'grid',
+                                                gridTemplateColumns: `repeat(${BOARD_WIDTH}, ${CELL_SIZE}px)`,
+                                                gap: '1px'
+                                            }}
+                                        >
+                                            {renderBoard().map((row, y) =>
+                                                row.map((cell, x) => (
+                                                    <div
+                                                        key={`${y}-${x}`}
+                                                        className={`${cell || 'bg-gray-900'} border border-gray-700 ${gameOverAnimation ? 'block-fall' : ''}`}
+                                                        style={{ 
+                                                            width: CELL_SIZE, 
+                                                            height: CELL_SIZE,
+                                                            animationDelay: gameOverAnimation ? `${y * 0.05}s` : '0s'
+                                                        }}
+                                                    />
+                                                ))
+                                            )}
+                                        </div>
+                                        {gameOver && (
+                                            <div className="absolute inset-0 flex items-center justify-center">
+                                                <div className="game-over-text text-4xl font-bold text-red-600 bg-black bg-opacity-50 px-6 py-3 rounded-lg">
+                                                    GAME OVER
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="flex flex-col gap-3">
                                         {nextPiece && (
                                             <div className="flex flex-col items-center">
+                                                <div className="text-sm font-semibold mb-1">다음 블록</div>
                                                 <div 
-                                                    className="border-2 border-gray-700 bg-gray-800 p-1.5 rounded-lg"
+                                                    className="border-2 border-gray-700 bg-gray-800 p-2"
                                                     style={{ 
                                                         display: 'grid',
                                                         gridTemplateColumns: `repeat(4, ${CELL_SIZE}px)`,
-                                                        gap: '2px'
+                                                        gap: '1px'
                                                     }}
                                                 >
                                                     {Array.from({ length: 4 }).map((_, y) =>
@@ -705,7 +721,7 @@
                                                             return (
                                                                 <div
                                                                     key={`${y}-${x}`}
-                                                                    className={`${isActive ? nextPiece.color : 'bg-gray-900'} rounded`}
+                                                                    className={`${isActive ? nextPiece.color : 'bg-gray-900'} rounded-md`}
                                                                     style={{ 
                                                                         width: CELL_SIZE, 
                                                                         height: CELL_SIZE 
@@ -718,144 +734,49 @@
                                             </div>
                                         )}
                                         
-                                        <div className="flex flex-col items-center bg-gray-800 bg-opacity-80 p-2 rounded-lg">
-                                            <div className="text-sm font-semibold text-yellow-400">LEVEL</div>
-                                            <div className="text-xl font-bold text-white">
-                                                {level}
-                                            </div>
+                                        <div className="flex flex-col items-center">
+                                            <svg 
+                                                width="60" 
+                                                height="60" 
+                                                viewBox="0 0 100 100"
+                                                className="wheel-spin"
+                                                style={{ '--spin-speed': `${2 / getWheelSpeed()}s` }}
+                                            >
+                                                <circle cx="50" cy="50" r="40" fill="none" stroke="#64748b" strokeWidth="8"/>
+                                                <line x1="50" y1="10" x2="50" y2="90" stroke="#64748b" strokeWidth="3"/>
+                                                <line x1="10" y1="50" x2="90" y2="50" stroke="#64748b" strokeWidth="3"/>
+                                                <line x1="21" y1="21" x2="79" y2="79" stroke="#64748b" strokeWidth="3"/>
+                                                <line x1="79" y1="21" x2="21" y2="79" stroke="#64748b" strokeWidth="3"/>
+                                                <circle cx="50" cy="50" r="10" fill="#475569"/>
+                                            </svg>
                                         </div>
 
-                                        {scoreHistory.length > 0 && (
-                                            <div className="flex flex-col items-center bg-gray-800 bg-opacity-90 p-2 rounded-lg">
-                                                <div className="text-xs font-semibold text-gray-400 mb-1">기록</div>
-                                                {scoreHistory.map((record, index) => (
-                                                    <div key={index} className="text-xs text-white">
-                                                        Lv.{record.level} : {formatScore(record.score)}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
-
-                                        {highScore.score > 0 && (
-                                            <div className="flex flex-col items-center bg-gradient-to-r from-yellow-600 to-orange-600 p-2 rounded-lg">
-                                                <div className="text-xs font-semibold text-white">최고기록</div>
-                                                <div className="text-base font-bold text-white">
-                                                    Lv.{highScore.level} : {formatScore(highScore.score)}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    <div className="relative">
-                                        <div 
-                                            className="border-4 border-gray-700 bg-gray-800 rounded-lg"
-                                            style={{ 
-                                                display: 'grid',
-                                                gridTemplateColumns: `repeat(${BOARD_WIDTH}, ${CELL_SIZE}px)`,
-                                                gap: '2px',
-                                                padding: '2px'
-                                            }}
-                                        >
-                                            {renderBoard().map((row, y) =>
-                                                row.map((cell, x) => (
-                                                    <div
-                                                        key={`${y}-${x}`}
-                                                        className={`${cell || 'bg-gray-900'} ${gameOverAnimation ? 'block-fall' : ''} rounded-md`}
-                                                        style={{ 
-                                                            width: CELL_SIZE, 
-                                                            height: CELL_SIZE,
-                                                            animationDelay: gameOverAnimation ? `${y * 0.05}s` : '0s'
-                                                        }}
-                                                    />
-                                                ))
-                                            )}
+                                        <div className="text-center text-xs bg-gray-800 bg-opacity-80 p-2 rounded-lg">
+                                            <div className="mb-1 font-semibold text-xs">조작법</div>
+                                            <div className="text-xs">← → 좌우이동</div>
+                                            <div className="text-xs">↑ 시계회전</div>
+                                            <div className="text-xs">↓ 반시계회전</div>
+                                            <div className="text-xs">Space 즉시</div>
+                                            <div className="text-xs">P 일시정지</div>
                                         </div>
-                                        {gameOver && (
-                                            <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
-                                                <div className="text-3xl font-bold text-red-600 bg-black bg-opacity-70 px-5 py-3 rounded-lg">
-                                                    GAME OVER
-                                                </div>
-                                                <div className="flex gap-3">
-                                                    <button
-                                                        onClick={startGame}
-                                                        className="px-5 py-4 bg-blue-600 active:bg-blue-700 rounded-lg text-sm font-bold whitespace-pre-line leading-tight min-w-[70px]"
-                                                    >
-                                                        {'다시\n시작'}
-                                                    </button>
-                                                    <button
-                                                        onClick={startRandomGame}
-                                                        className="px-5 py-4 bg-purple-600 active:bg-purple-700 rounded-lg text-sm font-bold whitespace-pre-line leading-tight min-w-[70px]"
-                                                    >
-                                                        {'랜덤\n시작'}
-                                                    </button>
-                                                    <button
-                                                        onClick={resetGame}
-                                                        className="px-5 py-4 bg-gray-600 active:bg-gray-700 rounded-lg text-sm font-bold whitespace-pre-line leading-tight min-w-[70px]"
-                                                    >
-                                                        {'메인\n으로'}
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        )}
                                     </div>
                                 </div>
 
-                                {!gameOver && !showLevelUp && (
-                                    <div className="mt-6 flex flex-col gap-8 items-center relative z-50">
-                                        <div className="grid grid-cols-3 gap-3 w-72">
-                                            <button
-                                                onTouchStart={(e) => { e.preventDefault(); handleMoveStart(-1); }}
-                                                onTouchEnd={(e) => { e.preventDefault(); handleMoveEnd(); }}
-                                                onTouchCancel={(e) => { e.preventDefault(); handleMoveEnd(); }}
-                                                onMouseDown={(e) => { e.preventDefault(); handleMoveStart(-1); }}
-                                                onMouseUp={(e) => { e.preventDefault(); handleMoveEnd(); }}
-                                                onMouseLeave={(e) => { e.preventDefault(); handleMoveEnd(); }}
-                                                className="control-btn bg-gray-700 active:bg-gray-600 text-white font-bold py-4 rounded-lg text-2xl"
-                                            >
-                                                ←
-                                            </button>
-                                            <button
-                                                onTouchStart={(e) => { e.preventDefault(); rotatePiece(); }}
-                                                className="control-btn bg-blue-600 active:bg-blue-500 text-white font-bold py-4 rounded-lg text-2xl"
-                                            >
-                                                ↻
-                                            </button>
-                                            <button
-                                                onTouchStart={(e) => { e.preventDefault(); handleMoveStart(1); }}
-                                                onTouchEnd={(e) => { e.preventDefault(); handleMoveEnd(); }}
-                                                onTouchCancel={(e) => { e.preventDefault(); handleMoveEnd(); }}
-                                                onMouseDown={(e) => { e.preventDefault(); handleMoveStart(1); }}
-                                                onMouseUp={(e) => { e.preventDefault(); handleMoveEnd(); }}
-                                                onMouseLeave={(e) => { e.preventDefault(); handleMoveEnd(); }}
-                                                className="control-btn bg-gray-700 active:bg-gray-600 text-white font-bold py-4 rounded-lg text-2xl"
-                                            >
-                                                →
-                                            </button>
-                                        </div>
-                                        
-                                        <div className="grid grid-cols-3 gap-3 w-72">
-                                            <button
-                                                onTouchStart={(e) => { e.preventDefault(); setIsPaused(prev => !prev); }}
-                                                className="control-btn bg-yellow-600 active:bg-yellow-500 text-white font-bold py-4 rounded-lg text-2xl"
-                                            >
-                                                ⏸
-                                            </button>
-                                            <button
-                                                onTouchStart={(e) => { e.preventDefault(); hardDrop(); }}
-                                                className="control-btn bg-red-600 active:bg-red-500 text-white font-bold py-4 rounded-lg col-span-2 text-lg"
-                                            >
-                                                DROP
-                                            </button>
-                                        </div>
-                                    </div>
-                                )}
+                                <div className="mt-6 text-center text-sm bg-gray-800 bg-opacity-80 p-4 rounded-lg shadow-lg">
+                                    <div className="mb-2 font-semibold">조작법:</div>
+                                    <div>← → : 좌우 이동</div>
+                                    <div>↑ : 시계방향 회전</div>
+                                    <div>↓ : 반시계방향 회전</div>
+                                    <div>Space : 즉시 떨어뜨리기</div>
+                                    <div>P : 일시정지</div>
+                                </div>
                             </>
                         )}
                     </div>
                     
-                    <div className="absolute bottom-2 right-2 text-xs text-amber-900 bg-yellow-100 bg-opacity-70 px-2 py-0.5 rounded z-10 text-right leading-tight pointer-events-none">
-                        <div>이동옥 2026.01.12</div>
-                        <div className="text-xs">with claude.ai</div>
+                    {/* 개발자 정보 */}
+                    <div className="absolute bottom-4 right-4 text-xs text-amber-900 bg-yellow-100 bg-opacity-70 px-3 py-1 rounded-lg z-30">
+                        개발자 : 이동옥 2026.01.08
                     </div>
                 </div>
             );
